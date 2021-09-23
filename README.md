@@ -244,15 +244,66 @@ Now that everything is setup, we can run the PHPCS command. This will automatica
 read the `phpcs.xml` file, and shows errors and warnings as caught by the
 WPCS ruleset.
 
+Let us assume, we have a file `my-plugin.php` with the following source code.
+
+```php
+<?php
+/**
+ * Plugin Name
+ *
+ * @package           PluginPackage
+ * @author            Your Name
+ * @copyright         2019 Your Name or Company Name
+ * @license           GPL-2.0-or-later
+ *
+ * @wordpress-plugin
+ * Plugin Name:       Plugin Name
+ * Plugin URI:        https://example.com/plugin-name
+ * Description:       Description of the plugin.
+ * Version:           1.0.0
+ * Requires at least: 5.2
+ * Requires PHP:      7.2
+ * Author:            Your Name
+ * Author URI:        https://example.com
+ * Text Domain:       plugin-slug
+ * License:           GPL v2 or later
+ * License URI:       http://www.gnu.org/licenses/gpl-2.0.txt
+ * Update URI:        https://example.com/my-plugin/
+ */
+
+// Following just some sample code, intentionally made insecure to demonstrate
+// the usability of wpcs. DO NOT USE SUCH BAD CODE IN YOUR PLUGIN.
+add_action( 'admin_notices', 'add_admin_notice' );
+
+// error here.
+function add_admin_notice() {
+	// get the redirection message
+	// A BAD EXAMPLE OF HOW NOT TO MAKE STUFF
+	// WPCS WILL CATCH THIS.
+	$my_plugin_message = isset( $_GET['my_plugin_admin_msg'] ) // warning here.
+		? $_GET['my_plugin_admin_msg']
+		: '';
+	if ( $my_plugin_message ) {
+		?>
+		<div class="notice notice-success">
+			<p>
+				<?php echo $my_plugin_message; // error here ?>
+			</p>
+		</div>
+		<?php
+	}
+}
+
+```
+
 From your plugin directory, run the following command.
 
 ```sh
 ./vendor/bin/phpcs my-plugin.php -s
 ```
 
-Where `my-plugin.php` is the file we want to lint at this moment. The source
-of the file can be found in the [example repository](https://github.com/swashata/wp-plugin-wpcs-setup/blob/main/my-plugin.php). The output of the above command
-should be like this.
+The source of the file can also be found in the [example repository](https://github.com/swashata/wp-plugin-wpcs-setup/blob/main/my-plugin.php).
+The output of the above command should be like this.
 
 ```
 ---------------------------------------------------------------------------------------------------------------
@@ -278,3 +329,139 @@ FOUND 4 ERRORS AND 2 WARNINGS AFFECTING 4 LINES
 The first column gives the line number, second column gives the type of violation
 (error or warning) and the last column gives the issue and corresponding sniff
 rule.
+
+### Fixing issues reported by phpcs
+
+Now that we know about the errors, it is time to fix it. A possible fix for
+the above code would be something like this.
+
+```diff
+- add_action( 'admin_notices', 'add_admin_notice' );
++ add_action( 'admin_notices', 'my_plugin_add_admin_notice' );
+
+// error here.
+- function add_admin_notice() {
++ function my_plugin_add_admin_notice() {
+	// get the redirection message
+	// A BAD EXAMPLE OF HOW NOT TO MAKE STUFF
+	// WPCS WILL CATCH THIS.
+	$my_plugin_message = isset( $_GET['my_plugin_admin_msg'] ) // warning here.
+		? $_GET['my_plugin_admin_msg']
+		: '';
+	if ( $my_plugin_message ) {
+		?>
+		<div class="notice notice-success">
+			<p>
+-				<?php echo $my_plugin_message; // error here ?>
++				<?php echo esc_html( $my_plugin_message ); ?>
+			</p>
+		</div>
+		<?php
+	}
+}
+```
+
+Notice that we have,
+
+1. Prefixed our function `add_admin_notice` with `my_plugin`.
+2. Use the [escaping method](https://developer.wordpress.org/plugins/security/securing-output/) `esc_html` to secure output.
+
+Now when we run the `phpcs` command again, we get the following output
+
+```
+❯ ./vendor/bin/phpcs my-plugin.php -s
+
+---------------------------------------------------------------------------------------------------------------
+FOUND 1 ERROR AND 2 WARNINGS AFFECTING 3 LINES
+---------------------------------------------------------------------------------------------------------------
+ 30 | ERROR   | You must use "/**" style comments for a function comment
+    |         | (Squiz.Commenting.FunctionComment.WrongStyle)
+ 34 | WARNING | Processing form data without nonce verification.
+    |         | (WordPress.Security.NonceVerification.Recommended)
+ 35 | WARNING | Processing form data without nonce verification.
+    |         | (WordPress.Security.NonceVerification.Recommended)
+---------------------------------------------------------------------------------------------------------------
+```
+
+### Gradual adaptation of WPCS rules
+
+We are still given 1 error and 2 warnings at this point. Given our code, we may
+argue that the warnings are irrelevant. So we can leave them as-is.
+
+For the error, it is related to how we should document our function. Since this
+is not really related to any security vulnerability, rather readability,
+we can suppress it.
+
+```diff
++ // phpcs:ignore Squiz.Commenting.FunctionComment.WrongStyle, Squiz.Commenting.FunctionComment.Missing
+function my_plugin_add_admin_notice() {
+```
+
+You can also edit the `phpcs.xml` file and disable the rules for all files.
+
+```diff
+	<!-- Let's also check that everything is properly documented. -->
+-   <rule ref="WordPress-Docs"/>
++	<rule ref="WordPress-Docs">
++		<exclude name="Squiz.Commenting.FunctionComment.WrongStyle"/>
++	</rule>
+```
+
+> After running `phpcs` on your codebase for the first time, you may find many
+> errors and warnings. Always fix all issues coming from `WordPress.Security`
+> and NEVER disable them.
+
+### Running phpcs on your whole project
+
+Up until now, we've been running `phpcs` command only on a single file. In
+reality, your plugin may have multiple files, located inside a directory. So
+it is useful to run `phpcs` on all the files instead of one file at a time.
+
+Let us assume the following directory structure of our plugin.
+
+```
+inc/
+├─ core/
+│  ├─ class-my-plugin-install.php
+│  ├─ class-my-plugin-boot.php
+├─ utils/
+│  ├─ class-my-plugin-a.php
+│  ├─ class-my-plugin-b.php
+my-plugin.php
+```
+
+We want `phpcs` to sniff the `my-plugin.php` along with all files inside the
+`inc` directory. The command would be
+
+```sh
+./vendor/bin/phpcs ./inc my-plugin.php -s -p --colors
+```
+
+Here we've used additional parameters `-p` which outputs progress and `--colors`
+which gives beautiful outputs in colors.
+
+![CLI Output](./images/phpcs-cli-output.png 'PHPCS CLI Output')
+
+You can go ahead and add this command in your [composer custom scripts](https://getcomposer.org/doc/articles/scripts.md#writing-custom-commands).
+
+## Setting up PHPCS/WPCS in your text editor
+
+[WPCS Wiki](https://github.com/WordPress/WordPress-Coding-Standards/wiki) has
+extensive guides on setting up phpcs in your favorite editor. We will see below
+how to setup phpcs in [Visual Studio Code (VSCode)](https://code.visualstudio.com/).
+
+First install [PHP_CodeSniffer](https://marketplace.visualstudio.com/items?itemName=obliviousharmony.vscode-php-codesniffer)
+extension in your VSCode editor. This is a more updated and maintained
+version of the original [phpcs](https://marketplace.visualstudio.com/items?itemName=ikappas.phpcs)
+extension with many added features.
+
+![VSCode Settings for PHP_CodeSniffer](./images/php-codesniffer-vscode-settings.png 'VSCode Settings for PHP_CodeSniffer')
+
+Now set `"phpCodeSniffer.autoExecutable": true` and `"phpCodeSniffer.standard": "Default"`
+in your user settings. This will make the extension work with the locally installed
+`phpcs` along with the `phpcs.xml` we've defined.
+
+![PHPCS Outputs in VSCode](./images/phpcs-error-in-vscode.png 'PHPCS Results shown inside VSCode')
+
+When you open the `my-plugin.php` file, you will see the errors highlighted
+in your editor.
