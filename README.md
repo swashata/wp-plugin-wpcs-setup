@@ -56,6 +56,7 @@ try to install and setup this way.
 
 **All the commands below are run from the Plugin's directory**. If you're on
 Windows, using [Git Bash For Windows](https://git-scm.com/downloads) is recommended.
+All files and setup can be found [in this repository](https://github.com/swashata/wp-plugin-wpcs-setup).
 
 ### Installing Composer
 
@@ -137,3 +138,143 @@ The installed coding standards are PEAR, Zend, PSR2, MySource, Squiz, PSR1, PSR1
 ```
 
 It means your installation is successful.
+
+### Setup PHPCS Sniffing rules to integrate WPCS
+
+Now create a file `phpcs.xml` in your plugin directory. This file will instruct
+PHPCS which sniffing rules to use.
+
+For now, we put the [default sample](https://github.com/WordPress/WordPress-Coding-Standards/blob/develop/phpcs.xml.dist.sample) as provided by the WPCS repository.
+
+```xml
+<?xml version="1.0"?>
+<ruleset xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" name="Example Project" xsi:noNamespaceSchemaLocation="https://raw.githubusercontent.com/squizlabs/PHP_CodeSniffer/master/phpcs.xsd">
+
+	<description>A custom set of rules to check for a WPized WordPress project</description>
+
+	<!-- Exclude the Composer Vendor directory. -->
+	<exclude-pattern>/vendor/*</exclude-pattern>
+
+	<!-- Exclude the Node Modules directory. -->
+	<exclude-pattern>/node_modules/*</exclude-pattern>
+
+	<!-- Exclude minified Javascript files. -->
+	<exclude-pattern>*.min.js</exclude-pattern>
+
+	<!-- Include the WordPress-Extra standard. -->
+	<rule ref="WordPress-Extra">
+		<!--
+		We may want a middle ground though. The best way to do this is add the
+		entire ruleset, then rule by rule, remove ones that don't suit a project.
+		We can do this by running `phpcs` with the '-s' flag, which allows us to
+		see the names of the sniffs reporting errors.
+		Once we know the sniff names, we can opt to exclude sniffs which don't
+		suit our project like so.
+
+		The below two examples just show how you can exclude rules.
+		They are not intended as advice about which sniffs to exclude.
+		-->
+
+		<!--
+		<exclude name="WordPress.WhiteSpace.ControlStructureSpacing"/>
+		<exclude name="WordPress.Security.EscapeOutput"/>
+		-->
+	</rule>
+
+	<!-- Let's also check that everything is properly documented. -->
+	<rule ref="WordPress-Docs"/>
+
+	<!-- Add in some extra rules from other standards. -->
+	<rule ref="Generic.CodeAnalysis.UnusedFunctionParameter"/>
+	<rule ref="Generic.Commenting.Todo"/>
+
+	<!-- Check for PHP cross-version compatibility. -->
+	<!--
+	To enable this, the PHPCompatibilityWP standard needs
+	to be installed.
+	See the readme for installation instructions:
+	https://github.com/PHPCompatibility/PHPCompatibilityWP
+	For more information, also see:
+	https://github.com/PHPCompatibility/PHPCompatibility
+	-->
+	<!--
+	<config name="testVersion" value="5.2-"/>
+	<rule ref="PHPCompatibilityWP"/>
+	-->
+
+	<!--
+	To get the optimal benefits of using WPCS, we should add a couple of
+	custom properties.
+	Adjust the values of these properties to fit our needs.
+
+	For information on additional custom properties available, check out
+	the wiki:
+	https://github.com/WordPress/WordPress-Coding-Standards/wiki/Customizable-sniff-properties
+	-->
+	<config name="minimum_supported_wp_version" value="4.9"/>
+
+	<rule ref="WordPress.WP.I18n">
+		<properties>
+			<property name="text_domain" type="array">
+				<element value="my-plugin"/>
+			</property>
+		</properties>
+	</rule>
+
+	<rule ref="WordPress.NamingConventions.PrefixAllGlobals">
+		<properties>
+			<property name="prefixes" type="array">
+				<element value="my_plugin"/>
+			</property>
+		</properties>
+	</rule>
+
+</ruleset>
+```
+
+To understand how this configuration works, read the [Custom Ruleset](https://github.com/WordPress/WordPress-Coding-Standards#using-a-custom-ruleset)
+section of WPCS repository. For now, the above will be a good starting point.
+
+Replace `my_plugin` with the snake-case prefix you want to use for your plugin
+and `my-plugin` with the text domain of your plugin.
+
+### Running PHPCS through CLI
+
+Now that everything is setup, we can run the PHPCS command. This will automatically
+read the `phpcs.xml` file, and shows errors and warnings as caught by the
+WPCS ruleset.
+
+From your plugin directory, run the following command.
+
+```sh
+./vendor/bin/phpcs my-plugin.php -s
+```
+
+Where `my-plugin.php` is the file we want to lint at this moment. The source
+of the file can be found in the [example repository](https://github.com/swashata/wp-plugin-wpcs-setup/blob/main/my-plugin.php). The output of the above command
+should be like this.
+
+```
+---------------------------------------------------------------------------------------------------------------
+FOUND 4 ERRORS AND 2 WARNINGS AFFECTING 4 LINES
+---------------------------------------------------------------------------------------------------------------
+ 30 | ERROR   | Functions declared in the global namespace by a theme/plugin should start with the
+    |         | theme/plugin prefix. Found: "add_admin_notice".
+    |         | (WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedFunctionFound)
+ 30 | ERROR   | You must use "/**" style comments for a function comment
+    |         | (Squiz.Commenting.FunctionComment.WrongStyle)
+ 34 | WARNING | Processing form data without nonce verification.
+    |         | (WordPress.Security.NonceVerification.Recommended)
+ 35 | WARNING | Processing form data without nonce verification.
+    |         | (WordPress.Security.NonceVerification.Recommended)
+ 41 | ERROR   | All output should be run through an escaping function (see the Security sections in the
+    |         | WordPress Developer Handbooks), found '$my_plugin_message'.
+    |         | (WordPress.Security.EscapeOutput.OutputNotEscaped)
+ 41 | ERROR   | Inline comments must end in full-stops, exclamation marks, or question marks
+    |         | (Squiz.Commenting.InlineComment.InvalidEndChar)
+---------------------------------------------------------------------------------------------------------------
+```
+
+The first column gives the line number, second column gives the type of violation
+(error or warning) and the last column gives the issue and corresponding sniff
+rule.
